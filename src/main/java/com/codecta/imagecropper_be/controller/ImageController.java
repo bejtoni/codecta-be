@@ -1,23 +1,34 @@
 package com.codecta.imagecropper_be.controller;
 
+import com.codecta.imagecropper_be.dto.PreviewRequestDto;
+import com.codecta.imagecropper_be.service.ImageService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
 
 @RestController
 @RequestMapping("/api/image")
 @RequiredArgsConstructor
 public class ImageController {
-    @PostMapping("/preview")
-    public ResponseEntity<Integer> previewImage(){
-        return null;
-    };
 
-    @PostMapping("/generate")
-    public ResponseEntity<Integer> generateImage(){
-        return null;
-    };
+    private final ImageService imageService;
+    private final ObjectMapper mapper = new ObjectMapper();
 
+    @Operation(summary = "Preview: rectangle crop → 5% scaled PNG (binary)")
+    @PostMapping(value = "/preview", consumes = {"multipart/form-data"})
+    public ResponseEntity<byte[]> preview(
+            @RequestPart("file") MultipartFile file,
+            @RequestPart("meta") String metaJson
+    ) throws IOException {
+        PreviewRequestDto meta = mapper.readValue(metaJson, PreviewRequestDto.class);
+        byte[] png = imageService.preview(file, meta.getRect());
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_PNG)
+                .body(png);
+    }
 }
