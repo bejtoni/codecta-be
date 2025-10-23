@@ -1,38 +1,31 @@
 package com.codecta.imagecropper_be.entity;
 
+import com.codecta.imagecropper_be.enums.LogoPosition;
 import jakarta.persistence.*;
 import lombok.*;
 
-import java.time.OffsetDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "image_config")
-@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class ImageConfig {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long UUID;
 
-    // npr. 0.05f za preview, ili max 0.25f po zadatku
-    private Float scaleDown;
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private UUID id;
 
-    // TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, CENTER
-    @Column(length = 32)
-    private String logoPosition;
+    @Column(nullable = false)
+    private double scaleDown;
 
-    @Lob
-    @Column(columnDefinition = "VARBINARY(MAX)")
-    private byte[] logoPng;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private LogoPosition position;
 
-    private OffsetDateTime createdAt;
-    private OffsetDateTime updatedAt;
-
-    @PrePersist
-    void onCreate() {
-        createdAt = OffsetDateTime.now();
-        updatedAt = createdAt;
-    }
-    @PreUpdate
-    void onUpdate() {
-        updatedAt = OffsetDateTime.now();
-    }
+    @Column(name = "logo_path")
+    private String logoPath;
 }
