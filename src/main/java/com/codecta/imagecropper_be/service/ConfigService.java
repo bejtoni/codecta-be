@@ -2,7 +2,6 @@ package com.codecta.imagecropper_be.service;
 
 import com.codecta.imagecropper_be.dto.*;
 import com.codecta.imagecropper_be.entity.ImageConfig;
-import com.codecta.imagecropper_be.enums.LogoPosition;
 import com.codecta.imagecropper_be.exception.NotFoundException;
 import com.codecta.imagecropper_be.repository.ImageConfigRepository;
 import lombok.RequiredArgsConstructor;

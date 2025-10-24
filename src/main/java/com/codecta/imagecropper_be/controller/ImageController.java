@@ -1,5 +1,6 @@
 package com.codecta.imagecropper_be.controller;
 
+import com.codecta.imagecropper_be.dto.GenerateRequestDto;
 import com.codecta.imagecropper_be.dto.PreviewRequestDto;
 import com.codecta.imagecropper_be.service.ImageService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,6 +28,20 @@ public class ImageController {
     ) throws IOException {
         PreviewRequestDto meta = mapper.readValue(metaJson, PreviewRequestDto.class);
         byte[] png = imageService.preview(file, meta.getRect());
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_PNG)
+                .body(png);
+    }
+
+    @Operation(summary = "Generate: rectangle crop (full quality) + optional logo overlay (configId)")
+    @PostMapping(value = "/generate", consumes = {"multipart/form-data"})
+    public ResponseEntity<byte[]> generate(
+            @RequestPart("file") MultipartFile file,
+            @RequestPart("meta") String metaJson
+    ) throws IOException {
+        // meta: {"rect": {...}, "configId": "UUID-..."}   // configId je opciono
+        GenerateRequestDto meta = mapper.readValue(metaJson, GenerateRequestDto.class);
+        byte[] png = imageService.generate(file, meta.getRect(), meta.getConfigId());
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_PNG)
                 .body(png);

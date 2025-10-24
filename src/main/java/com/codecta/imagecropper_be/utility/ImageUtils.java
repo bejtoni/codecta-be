@@ -1,6 +1,7 @@
 package com.codecta.imagecropper_be.utility;
 
 import com.codecta.imagecropper_be.dto.CropRectangleDto;
+import com.codecta.imagecropper_be.enums.LogoPosition;
 import net.coobird.thumbnailator.Thumbnails;
 
 import javax.imageio.ImageIO;
@@ -46,5 +47,49 @@ public final class ImageUtils {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(img, "png", baos);
         return baos.toByteArray();
+    }
+
+    public static BufferedImage overlayLogo(
+            BufferedImage base,
+            BufferedImage logo,
+            LogoPosition position,
+            double logoPercentOfCropW,
+            double logoPercentOfCropH
+    ) throws IOException {
+
+        // Izračun ciljne veličine loga prema dimenzijama croppanog outputa
+        int targetW = Math.max(1, (int) Math.round(base.getWidth() * logoPercentOfCropW));
+        int targetH = Math.max(1, (int) Math.round(base.getHeight() * logoPercentOfCropH));
+
+        // Skaliraj logo na ciljnu veličinu (zadržava alpha kanal)
+        BufferedImage scaledLogo = Thumbnails.of(logo)
+                .size(targetW, targetH)
+                .asBufferedImage();
+
+        // Odredi X/Y prema izabranoj poziciji
+        int x = switch (position) {
+            case TOP_LEFT, BOTTOM_LEFT -> 0;
+            case TOP_RIGHT, BOTTOM_RIGHT -> base.getWidth() - scaledLogo.getWidth();
+            case CENTER -> (base.getWidth() - scaledLogo.getWidth()) / 2;
+        };
+
+        int y = switch (position) {
+            case TOP_LEFT, TOP_RIGHT -> 0;
+            case BOTTOM_LEFT, BOTTOM_RIGHT -> base.getHeight() - scaledLogo.getHeight();
+            case CENTER -> (base.getHeight() - scaledLogo.getHeight()) / 2;
+        };
+
+        // Crtamo u novi ARGB bitmap kako bismo sačuvali transparentnost
+        BufferedImage out = new BufferedImage(base.getWidth(), base.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.drawImage(base, 0, 0, null);
+            g.drawImage(scaledLogo, x, y, null);
+        } finally {
+            g.dispose();
+        }
+
+        return out;
     }
 }
