@@ -28,4 +28,7 @@ public class ImageConfig {
 
     @Column(name = "logo_path")
     private String logoPath;
+
+    @Column(name = "user_id")
+    private UUID userId;
 }
