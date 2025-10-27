@@ -2,14 +2,14 @@ package com.codecta.imagecropper_be.service;
 
 import com.codecta.imagecropper_be.dto.*;
 import com.codecta.imagecropper_be.entity.ImageConfig;
+import com.codecta.imagecropper_be.enums.LogoPosition;
 import com.codecta.imagecropper_be.exception.NotFoundException;
 import com.codecta.imagecropper_be.repository.ImageConfigRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.UUID;
 
@@ -17,109 +17,159 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ConfigService {
 
-    private final ImageConfigRepository repo; // JPA repository za ImageConfig entitet
-    private static final String LOGO_DIR = "./data/logos/"; // folder gdje se čuvaju logo slike
+    private final ImageConfigRepository repo;
+    private static final long MAX_LOGO_SIZE = 5 * 1024 * 1024; // 5 MB
 
     /**
-     * Kreira novi config (sa scaleDown, pozicijom i opcionim logom)
+     * Upsert operacija - kreira ili ažurira konfiguraciju za korisnika
+     * @param userId UUID trenutnog korisnika (iz JWT-a)
+     * @param scaleDownPercent vrijednost između 1-25 (sa FE slidera)
+     * @param position string koji se mapira na LogoPosition enum
+     * @param logo opciono PNG fajl ≤ 5 MB
+     * @return ConfigResponse sa normalizovanim podacima
      */
-    public ConfigResponse create(CreateConfigRequest req) throws IOException {
-        validateScale(req.getScaleDown()); // provjeri da je scaleDown između 1 i 25 (%)
-        String logoPath = saveLogoIfPresent(req.getLogoImage()); // ako postoji logo, snimi ga na disk
+    @Transactional
+    public ConfigResponse upsertConfig(UUID userId, double scaleDownPercent, String position, MultipartFile logo) throws IOException {
+        // Validacija ulaza
+        validateScaleDownPercent(scaleDownPercent);
+        LogoPosition logoPosition = validateAndParsePosition(position);
+        byte[] logoBlob = validateAndProcessLogo(logo);
 
-        // Izgradi novi entitet i konvertuj scaleDown iz % u decimalni faktor (npr. 5% -> 0.05)
-        ImageConfig cfg = ImageConfig.builder()
-                .scaleDown(req.getScaleDown() / 100.0)
-                .position(req.getLogoPosition())
-                .logoPath(logoPath)
-                .build();
+        // Upsert logika - traži postojeći config po userId
+        ImageConfig existingConfig = repo.findByUserId(userId).orElse(null);
+        
+        if (existingConfig == null) {
+            // Kreiraj novi config
+            existingConfig = ImageConfig.builder()
+                    .userId(userId)
+                    .scaleDownPercent(scaleDownPercent)
+                    .position(logoPosition)
+                    .logoBlob(logoBlob)
+                    .build();
+        } else {
+            // Ažuriraj postojeći config
+            existingConfig.setScaleDownPercent(scaleDownPercent);
+            existingConfig.setPosition(logoPosition);
+            // Logo mijenjamo samo ako je novi fajl poslan
+            if (logoBlob != null) {
+                existingConfig.setLogoBlob(logoBlob);
+            }
+        }
 
-        repo.save(cfg); // sačuvaj u bazu
-        return toResponse(cfg); // pretvori u DTO za response
+        ImageConfig savedConfig = repo.save(existingConfig);
+        return toResponse(savedConfig);
     }
 
     /**
-     * Ažurira postojeći config (djelimično)
+     * Dohvata konfiguraciju za korisnika
+     * @param userId UUID korisnika
+     * @return ConfigResponse ili NotFoundException ako ne postoji
      */
-    public ConfigResponse update(UUID id, UpdateConfigRequest req) throws IOException {
-        // Dohvati postojeći config ili baci grešku ako ne postoji
-        ImageConfig cfg = repo.findById(id).orElseThrow(() ->
-                new NotFoundException("Config not found with"));
-
-        // Ako je došao novi scaleDown -> validiraj i postavi
-        if (req.getScaleDown() != null) {
-            validateScale(req.getScaleDown());
-            cfg.setScaleDown(req.getScaleDown() / 100.0);
-        }
-
-        // Ako je došla nova pozicija loga -> postavi
-        if (req.getLogoPosition() != null) {
-            cfg.setPosition(req.getLogoPosition());
-        }
-
-        // Ako je stigao novi logo fajl -> snimi ga na disk i ažuriraj path
-        if (req.getLogoImage() != null && !req.getLogoImage().isEmpty()) {
-            cfg.setLogoPath(saveLogoIfPresent(req.getLogoImage()));
-        }
-
-        repo.save(cfg); // spremi promjene u bazu
-        return toResponse(cfg);
+    public ConfigResponse getConfigByUserId(UUID userId) {
+        ImageConfig config = repo.findByUserId(userId)
+                .orElseThrow(() -> new NotFoundException("Config not found for user"));
+        return toResponse(config);
     }
 
     /**
-     * Dohvata jedan config po ID-u
+     * Ažurira postojeći config (parcijalno - samo poslana polja se mijenjaju)
+     * @param userId UUID korisnika
+     * @param scaleDown nova vrijednost scaleDown (opciono)
+     * @param position nova pozicija (opciono)
+     * @param logo novi logo (opciono)
+     * @return ConfigResponse
      */
-    public ConfigResponse get(UUID id) {
-        ImageConfig cfg = repo.findById(id)
-                .orElseThrow(() -> new NotFoundException("Config not found"));
-        return toResponse(cfg);
+    @Transactional
+    public ConfigResponse updateConfig(UUID userId, Double scaleDown, LogoPosition position, MultipartFile logo) throws IOException {
+        ImageConfig existingConfig = repo.findByUserId(userId)
+                .orElseThrow(() -> new NotFoundException("Config not found for user"));
+
+        // Ažuriraj samo ako je vrijednost poslana
+        if (scaleDown != null) {
+            validateScaleDownPercent(scaleDown);
+            existingConfig.setScaleDownPercent(scaleDown);
+        }
+
+        if (position != null) {
+            existingConfig.setPosition(position);
+        }
+
+        // Logo mijenjamo samo ako je novi fajl poslan
+        byte[] logoBlob = validateAndProcessLogo(logo);
+        if (logoBlob != null) {
+            existingConfig.setLogoBlob(logoBlob);
+        }
+
+        ImageConfig savedConfig = repo.save(existingConfig);
+        return toResponse(savedConfig);
     }
 
     // --------------------- PRIVATE HELPERS -----------------------
 
     /**
-     * Validira da je scaleDown u dozvoljenom rasponu [1%, 25%].
+     * Validira scaleDownPercent da je u rasponu [0.01, 0.25] (normalizovane vrijednosti)
      */
-    private void validateScale(double s) {
-        if (s < 1 || s > 25)
-            throw new IllegalArgumentException("scaleDown must be between 1% and 25%");
+    private void validateScaleDownPercent(double scaleDownPercent) {
+        if (scaleDownPercent < 0.01 || scaleDownPercent > 0.25) {
+            throw new IllegalArgumentException("scaleDownPercent must be between 0.01 and 0.25 (1% and 25%)");
+        }
     }
 
     /**
-     * Ako postoji uploadovani logo, snima ga u ./data/logos/ i vraća apsolutni path.
-     * Ako logo nije poslan -> vraća null.
+     * Validira i parsira position string u LogoPosition enum
      */
-    private String saveLogoIfPresent(MultipartFile file) throws IOException {
-        if (file == null || file.isEmpty()) return null;
+    private LogoPosition validateAndParsePosition(String position) {
+        if (position == null || position.trim().isEmpty()) {
+            throw new IllegalArgumentException("Position cannot be null or empty");
+        }
+        
+        try {
+            return LogoPosition.valueOf(position.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid position: " + position + ". Valid values: " + 
+                    java.util.Arrays.toString(LogoPosition.values()));
+        }
+    }
 
-        // Ograniči tip fajla samo na PNG
-        if (!"image/png".equalsIgnoreCase(file.getContentType()))
+    /**
+     * Validira i procesira logo fajl
+     * @param logo MultipartFile
+     * @return byte[] sa sadržajem loga ili null ako nije poslan
+     */
+    private byte[] validateAndProcessLogo(MultipartFile logo) throws IOException {
+        if (logo == null || logo.isEmpty()) {
+            return null;
+        }
+
+        // Provjeri Content-Type
+        if (!"image/png".equalsIgnoreCase(logo.getContentType())) {
             throw new IllegalArgumentException("Logo must be image/png");
+        }
 
-        // Kreiraj folder ako ne postoji
-        File dir = new File(LOGO_DIR);
-        if (!dir.exists()) dir.mkdirs();
+        // Provjeri veličinu
+        if (logo.getSize() > MAX_LOGO_SIZE) {
+            throw new IllegalArgumentException("Logo size must be ≤ 5 MB");
+        }
 
-        // Generiši jedinstveno ime fajla
-        String filename = UUID.randomUUID() + "-" + StringUtils.cleanPath(file.getOriginalFilename());
-        File dest = new File(dir, filename);
-
-        // Snimi fajl
-        file.transferTo(dest);
-
-        // Vrati apsolutni path koji se čuva u bazi
-        return dest.getAbsolutePath();
+        return logo.getBytes();
     }
 
+//    /**
+//     * Normalizuje scaleDownPercent iz [1, 25] u [0.01, 0.25]
+//     */
+//    private double normalizeScaleDown(double scaleDownPercent) {
+//        return scaleDownPercent / 100.0;
+//    }
+
     /**
-     * Pretvara entitet u DTO koji vraćamo ka frontendu.
+     * Pretvara entitet u DTO za response
      */
-    private ConfigResponse toResponse(ImageConfig cfg) {
+    private ConfigResponse toResponse(ImageConfig config) {
         return ConfigResponse.builder()
-                .id(cfg.getId())
-                .scaleDown(cfg.getScaleDown() * 100.0) // ponovo konvertuj iz 0.05 u 5%
-                .logoPosition(cfg.getPosition())
-                .logoPath(cfg.getLogoPath())
+                .id(config.getId())
+                .scaleDown(config.getScaleDownPercent()) // vraćamo normalizovanu vrijednost (0.01-0.25)
+                .logoPosition(config.getPosition().name()) // vraćamo string
+                .hasLogo(config.getLogoBlob() != null && config.getLogoBlob().length > 0)
                 .build();
     }
 }

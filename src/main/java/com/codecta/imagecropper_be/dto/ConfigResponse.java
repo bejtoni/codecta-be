@@ -1,6 +1,5 @@
 package com.codecta.imagecropper_be.dto;
 
-import com.codecta.imagecropper_be.enums.LogoPosition;
 import lombok.*;
 
 import java.util.UUID;
@@ -11,7 +10,7 @@ import java.util.UUID;
 @Builder
 public class ConfigResponse {
     private UUID id;
-    private double scaleDown;
-    private LogoPosition logoPosition;
-    private String logoPath;
+    private double scaleDown; // normalizovana vrijednost (0.01-0.25)
+    private String logoPosition; // string reprezentacija pozicije
+    private Boolean hasLogo; // da li korisnik ima logo
 }

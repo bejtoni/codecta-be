@@ -19,16 +19,17 @@ public class ImageConfig {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
-    @Column(nullable = false)
-    private double scaleDown;
+    @Column(name = "scale_down_percent", nullable = false)
+    private Double scaleDownPercent; // normalizovana vrijednost (0.01-0.25)
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private LogoPosition position;
 
-    @Column(name = "logo_path")
-    private String logoPath;
-
-    @Column(name = "user_id")
+    @Column(name = "user_id", nullable = false, unique = true)
     private UUID userId;
+
+    @Lob
+    @Column(name = "logo_blob")
+    private byte[] logoBlob; // čuvamo samo bajtove loga
 }

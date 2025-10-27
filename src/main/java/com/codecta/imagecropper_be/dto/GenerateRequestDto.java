@@ -7,8 +7,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * Metadata za /api/image/generate endpoint.
- * rect: obavezno.
- * configId: opciono (ako postoji, primjenjuje se logo overlay iz tog configa).
+ * rect: obavezno - koordinate za crop u originalnim pikselima.
  */
 @Data
 @NoArgsConstructor
@@ -17,7 +16,4 @@ public class GenerateRequestDto {
 
     @Valid
     private CropRectangleDto rect;
-
-    // Opcionalno; kada je zadato, očekujemo validan UUID string.
-    private String configId;
 }
