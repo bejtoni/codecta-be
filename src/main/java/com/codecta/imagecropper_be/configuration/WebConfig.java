@@ -18,7 +18,7 @@ public class WebConfig {
         // Dozvoljeni frontend origin-i
         configuration.setAllowedOrigins(List.of(
                 "http://localhost:5173",
-                "http://localhost:5174"
+                "http://localhost:8080"
         ));
 
         // Dozvoljene HTTP metode

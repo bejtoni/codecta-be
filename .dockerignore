@@ -1,0 +1,13 @@
+target
+build
+out
+.mvn
+.gradle
+.idea
+*.iml
+*.log
+.git
+.gitignore
+.env
+node_modules
+.DS_Store
