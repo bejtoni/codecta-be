@@ -21,42 +21,38 @@ public class ConfigService {
     private static final long MAX_LOGO_SIZE = 5 * 1024 * 1024; // 5 MB
 
     /**
-     * Upsert operacija - kreira ili ažurira konfiguraciju za korisnika
+     * Kreira novu konfiguraciju za korisnika (samo kreiranje, bez ažuriranja)
      * @param userId UUID trenutnog korisnika (iz JWT-a)
      * @param scaleDownPercent vrijednost između 1-25 (sa FE slidera)
      * @param position string koji se mapira na LogoPosition enum
-     * @param logo opciono PNG fajl ≤ 5 MB
      * @return ConfigResponse sa normalizovanim podacima
+     * @throws IllegalArgumentException ako config već postoji ili ako logo nije poslan
      */
     @Transactional
-    public ConfigResponse upsertConfig(UUID userId, double scaleDownPercent, String position, MultipartFile logo) throws IOException {
-        // Validacija ulaza
+    public ConfigResponse createConfig(UUID userId, double scaleDownPercent, String position, MultipartFile logo) throws IOException {
+        // Proveri da li config već postoji
+        if (repo.findByUserId(userId).isPresent()) {
+            throw new IllegalArgumentException("Config already exists for this user. Use PUT to update.");
+        }
+
+        // Validacija ulaza - logo je obavezan
+        if (logo == null || logo.isEmpty()) {
+            throw new IllegalArgumentException("Logo is required for creating configuration");
+        }
+
         validateScaleDownPercent(scaleDownPercent);
         LogoPosition logoPosition = validateAndParsePosition(position);
         byte[] logoBlob = validateAndProcessLogo(logo);
 
-        // Upsert logika - traži postojeći config po userId
-        ImageConfig existingConfig = repo.findByUserId(userId).orElse(null);
-        
-        if (existingConfig == null) {
-            // Kreiraj novi config
-            existingConfig = ImageConfig.builder()
-                    .userId(userId)
-                    .scaleDownPercent(scaleDownPercent)
-                    .position(logoPosition)
-                    .logoBlob(logoBlob)
-                    .build();
-        } else {
-            // Ažuriraj postojeći config
-            existingConfig.setScaleDownPercent(scaleDownPercent);
-            existingConfig.setPosition(logoPosition);
-            // Logo mijenjamo samo ako je novi fajl poslan
-            if (logoBlob != null) {
-                existingConfig.setLogoBlob(logoBlob);
-            }
-        }
+        // Kreiraj novi config
+        ImageConfig newConfig = ImageConfig.builder()
+                .userId(userId)
+                .scaleDownPercent(scaleDownPercent)
+                .position(logoPosition)
+                .logoBlob(logoBlob)
+                .build();
 
-        ImageConfig savedConfig = repo.save(existingConfig);
+        ImageConfig savedConfig = repo.save(newConfig);
         return toResponse(savedConfig);
     }
 
@@ -77,7 +73,6 @@ public class ConfigService {
      * @param scaleDown nova vrijednost scaleDown (opciono)
      * @param position nova pozicija (opciono)
      * @param logo novi logo (opciono)
-     * @return ConfigResponse
      */
     @Transactional
     public ConfigResponse updateConfig(UUID userId, Double scaleDown, LogoPosition position, MultipartFile logo) throws IOException {
@@ -153,13 +148,6 @@ public class ConfigService {
 
         return logo.getBytes();
     }
-
-//    /**
-//     * Normalizuje scaleDownPercent iz [1, 25] u [0.01, 0.25]
-//     */
-//    private double normalizeScaleDown(double scaleDownPercent) {
-//        return scaleDownPercent / 100.0;
-//    }
 
     /**
      * Pretvara entitet u DTO za response

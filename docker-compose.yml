@@ -1,0 +1,77 @@
+networks:
+  appnet: {}
+
+volumes:
+  mssql_data: {}
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: imagecropper-db
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Developer"
+      MSSQL_SA_PASSWORD: "${DB_PASS}"
+    ports:
+      - "1433:1433" # ostavi ako želiš SSMS/sqlcmd sa hosta
+    volumes:
+      - mssql_data:/var/opt/mssql
+      - ./init.sql:/init.sql:ro
+    command: >
+      /bin/bash -c "
+      /opt/mssql/bin/sqlservr &
+      
+      for i in {1..60}; do
+        /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q \"SELECT 1\" >/dev/null 2>&1 && break
+        sleep 2
+      done
+      
+      /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -i /init.sql
+      
+      wait
+      "
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$${MSSQL_SA_PASSWORD}" -Q "SELECT 1" -C >/dev/null 2>&1 || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  backend:
+    build:
+      context: .
+    container_name: imagecropper-backend
+    env_file:
+      - .env
+    environment:
+      # URL na docker servis db da pointa
+      SPRING_DATASOURCE_URL: "jdbc:sqlserver://db:1433;databaseName=image_cropper;encrypt=true;trustServerCertificate=true"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  frontend:
+    build:
+      context: ../imagecropper-fe
+    container_name: imagecropper-frontend
+    env_file:
+      - ../imagecropper-fe/.env
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - appnet

@@ -40,16 +40,16 @@ public class ConfigController {
     }
 
     /**
-     * POST /api/config (UPSERT, multipart)
-     * Kreiraj ili ažuriraj konfiguraciju u jednom potezu
+     * POST /api/config (CREATE ONLY, multipart)
+     * Kreiraj novu konfiguraciju - svi parametri su obavezni
      */
-    @Operation(summary = "Upsert configuration (create or update)")
+    @Operation(summary = "Create new configuration (all fields required)")
     @PostMapping(consumes = {"multipart/form-data"})
-    public ResponseEntity<ConfigResponse> upsertConfig(
+    public ResponseEntity<ConfigResponse> createConfig(
             Authentication authentication,
             @RequestParam("scaleDownPercent") String scaleDownPercentStr,
             @RequestParam("logoPosition") String position,
-            @RequestParam(name = "logoImage", required = false) MultipartFile logo
+            @RequestParam("logoImage") MultipartFile logo
     ) throws IOException {
         
         // Parse scaleDownPercent from string to double
@@ -59,8 +59,8 @@ public class ConfigController {
         Jwt jwt = (Jwt) authentication.getPrincipal();
         User user = userService.upsertFromJwt(jwt);
         
-        // Upsert config - servis će kreirati ako ne postoji, ažurirati ako postoji
-        ConfigResponse response = configService.upsertConfig(user.getId(), scaleDownPercent, position, logo);
+        // Kreiraj config - servis baca grešku ako već postoji
+        ConfigResponse response = configService.createConfig(user.getId(), scaleDownPercent, position, logo);
         return ResponseEntity.ok(response);
     }
 
@@ -73,8 +73,8 @@ public class ConfigController {
     public ResponseEntity<ConfigResponse> updateConfig(
             Authentication authentication,
             @RequestParam(name = "scaleDownPercent", required = false) String scaleDownPercentStr,
-            @RequestParam(name = "position", required = false) String positionStr,
-            @RequestParam(name = "logo", required = false) MultipartFile logo
+            @RequestParam(name = "logoPosition", required = false) String positionStr,
+            @RequestParam(name = "logoImage", required = false) MultipartFile logo
     ) throws IOException {
         
         // Izvuci JWT i upsertuj korisnika ako ne postoji
